@@ -855,4 +855,38 @@ export default async function seedDemoData({ container }: ExecArgs) {
   });
 
   logger.info("Finished seeding inventory levels data.");
+
+  // Dodanie przykładowego użytkownika do testów
+  logger.info("Seeding demo customer data...");
+  
+  const customerModuleService = container.resolve(Modules.CUSTOMER);
+  
+  try {
+    // Sprawdź czy użytkownik już istnieje
+    const existingCustomers = await customerModuleService.listCustomers({
+      email: "test@falkoproject.com",
+    });
+
+    if (existingCustomers.length === 0) {
+      // Utwórz przykładowego użytkownika (bez hasła - będzie ustawione przez system auth)
+      const demoCustomer = await customerModuleService.createCustomers({
+        email: "test@falkoproject.com",
+        first_name: "Jan",
+        last_name: "Kowalski",
+        phone: "+48 123 456 789",
+      });
+
+      logger.info(`✅ Created demo customer: ${demoCustomer.email}`);
+      logger.info("Demo customer credentials:");
+      logger.info("  Email: test@falkoproject.com");
+      logger.info("  Password: Set through registration process");
+      logger.info("  Note: Use the registration form to set a password for this customer");
+    } else {
+      logger.info("Demo customer already exists, skipping creation.");
+    }
+  } catch (error) {
+    logger.error("Failed to create demo customer:", error);
+  }
+
+  logger.info("Finished seeding demo customer data.");
 }
