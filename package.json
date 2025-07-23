@@ -16,6 +16,7 @@
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
     "seed:demo": "medusa exec ./src/scripts/seed-demo-customer.ts",
+    "seed:detailed": "medusa exec ./src/scripts/seed-detailed-shipping.ts",
     "start": "medusa start",
     "dev": "medusa develop",
     "test:integration:http": "TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
@@ -31,6 +32,7 @@
     "@mikro-orm/knex": "6.4.3",
     "@mikro-orm/migrations": "6.4.3",
     "@mikro-orm/postgresql": "6.4.3",
+    "@rsc-labs/medusa-shippo-elements": "^0.1.1",
     "awilix": "^8.0.1",
     "pg": "^8.13.0"
   },

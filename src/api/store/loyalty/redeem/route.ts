@@ -1,116 +1,95 @@
-import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { MedusaRequest, MedusaResponse } from "@medusajs/medusa"
 
-interface RedeemRewardBody {
-  reward_id: string
-}
-
-// CORS Middleware
-function setCorsHeaders(res: MedusaResponse) {
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-publishable-api-key, customer-id');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-}
-
-/**
- * OPTIONS /store/loyalty/redeem
- * Handle preflight requests
- */
-export async function OPTIONS(
-  req: MedusaRequest,
-  res: MedusaResponse
-) {
-  setCorsHeaders(res);
-  return res.status(200).end();
-}
-
-/**
- * POST /store/loyalty/redeem
- * Wykorzystaj punkty na nagrodę
- */
-export async function POST(
-  req: MedusaRequest<RedeemRewardBody>,
-  res: MedusaResponse
-) {
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    // Set CORS headers
-    setCorsHeaders(res);
+    // Get authenticated customer from Medusa context
+    // TODO: Implement proper Medusa customer authentication
+    // For now, we'll use a development-safe approach
+    const publishableKey = req.headers['x-publishable-api-key'] as string;
     
-    // Get customer ID from query/headers (simplified for now)
-    const customerId = req.headers['customer-id'] as string
-
+    if (!publishableKey) {
+      return res.status(401).json({
+        type: "unauthorized",
+        message: "Authentication required"
+      })
+    }
+    
+    // Development: Use demo customer ID, Production: Get from authenticated session
+    const customerId = process.env.NODE_ENV === 'development' ? 'demo-customer' : null;
+    
     if (!customerId) {
       return res.status(401).json({
         type: "unauthorized", 
-        message: "Customer ID required in headers"
+        message: "Customer authentication required"
       })
     }
 
-    const { reward_id } = req.body
+    const { reward_id } = req.body;
 
     if (!reward_id) {
       return res.status(400).json({
         type: "invalid_data",
-        message: "reward_id is required"
-      })
+        message: "Reward ID is required"
+      });
     }
 
-    // Mock rewards lookup - later we'll query the database
-    const rewards = [
-      { id: '1', title: '50 PLN Zniżka', points_cost: 500 },
-      { id: '2', title: 'Darmowa dostawa', points_cost: 300 },
-      { id: '3', title: 'Exclusive T-shirt', points_cost: 1500 },
-      { id: '4', title: '15% Zniżka Premium', points_cost: 1000 },
-      { id: '5', title: 'Early Access', points_cost: 3000 },
-      { id: '6', title: '20% Zniżka', points_cost: 2000 }
-    ]
-
-    const reward = rewards.find(r => r.id === reward_id)
-
+    // Get loyalty service
+    const loyaltyService = req.scope.resolve("loyaltyService");
+    
+    // Get reward details (for now, use mock rewards)
+    const mockRewards = {
+      'discount-50': { title: '50 zł zniżki', points_cost: 500 },
+      'discount-100': { title: '100 zł zniżki', points_cost: 1000 },
+      'free-shipping': { title: 'Darmowa dostawa', points_cost: 200 },
+      'discount-25': { title: '25 zł zniżki', points_cost: 250 },
+      'exclusive-access': { title: 'Wczesny dostęp', points_cost: 300 },
+      'birthday-bonus': { title: 'Bonus urodzinowy', points_cost: 150 },
+    };
+    
+    const reward = mockRewards[reward_id as keyof typeof mockRewards];
+    
     if (!reward) {
       return res.status(404).json({
         type: "not_found",
         message: "Reward not found"
-      })
+      });
     }
 
-    // Mock points check - later we'll query customer's actual points
-    const customerPoints = 1250
+    // Attempt to spend points
+    const success = await loyaltyService.spendPoints(
+      customerId,
+      reward.points_cost,
+      reward_id,
+      `Wykorzystanie nagrody: ${reward.title}`
+    );
 
-    if (customerPoints < reward.points_cost) {
+    if (!success) {
       return res.status(400).json({
         type: "insufficient_points",
-        message: `Insufficient points. Required: ${reward.points_cost}, Available: ${customerPoints}`
-      })
+        message: "Insufficient points for this reward"
+      });
     }
 
-    // Create transaction record
-    const transaction = {
-      id: Date.now().toString(),
-      type: 'spent',
-      points: reward.points_cost,
-      description: `Wykorzystano punkty na: ${reward.title}`,
-      reward_id: reward_id,
-      created_at: new Date().toISOString()
-    }
-
-    const response = {
+    // Get updated balance
+    const updatedAccount = await loyaltyService.getCustomerAccount(customerId);
+    
+    const redemption = {
       success: true,
-      message: 'Nagroda została pomyślnie odebrana',
-      transaction,
-      new_points_balance: customerPoints - reward.points_cost
-    }
+      reward_id: reward_id,
+      reward_title: reward.title,
+      points_spent: reward.points_cost,
+      remaining_points: updatedAccount?.total_points || 0,
+      redemption_id: `red_${Date.now()}`
+    };
 
-    console.log(`✅ Reward redeemed for customer ${customerId}: ${reward.title}`)
+    console.log(`✅ Reward redeemed for customer: ${customerId}, Reward: ${reward.title}, Points spent: ${reward.points_cost}`);
+    res.json(redemption);
 
-    return res.status(200).json(response)
-    
   } catch (error) {
-    console.error('❌ Error redeeming reward:', error)
-    
-    return res.status(500).json({
+    console.error('❌ Error redeeming reward:', error);
+    res.status(500).json({
       type: "internal_server_error",
       message: "Failed to redeem reward"
-    })
+    });
   }
 }

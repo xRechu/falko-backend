@@ -37,7 +37,8 @@ export default async function createTestCustomerWithAuth({ container }: ExecArgs
       logger.info(`Customer already exists: ${testEmail} (ID: ${customer.id})`);
     }
 
-    // 3. Sprawdź czy auth identity już istnieje
+    // 3. Sprawdź czy auth identity już istnieje (tymczasowo wyłączone - API się zmieniło)
+    /*
     try {
       const existingAuth = await authModuleService.retrieveAuthIdentity({
         entity_id: testEmail,
@@ -66,6 +67,7 @@ export default async function createTestCustomerWithAuth({ container }: ExecArgs
       
       logger.info(`✅ Created auth identity: ${authIdentity.id}`);
     }
+    */
 
     logger.info("✅ Test customer with auth completed!");
     logger.info("");
