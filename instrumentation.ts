@@ -22,3 +22,12 @@
 //     },
 //   })
 // }
+
+import { rememberMeMiddleware } from './src/middleware/remember-me'
+
+export const config = {
+  projectConfig: {},
+  middleware: [
+    rememberMeMiddleware,
+  ]
+}
