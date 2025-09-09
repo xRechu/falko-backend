@@ -12,30 +12,50 @@ if (process.env.NODE_ENV === 'production') {
     'STORE_CORS',
     'ADMIN_CORS',
     'AUTH_CORS',
-  'REDIS_URL',
-  'MEDUSA_BACKEND_URL'
+    'REDIS_URL'
+    // MEDUSA_BACKEND_URL – zalecane, ale jeżeli brak spróbujemy zbudować fallback
   ]
   const missing = required.filter(k => !process.env[k])
   if (missing.length) {
-    // Rzucamy błąd zanim Medusa zainicjuje moduły – prostszy troubleshooting
     throw new Error('Missing required env vars: ' + missing.join(', '))
+  }
+  // Fallback backend URL jeśli nie ustawiono (Railway / Fly detections)
+  if (!process.env.MEDUSA_BACKEND_URL) {
+    const fallback = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_STATIC_URL
+    if (fallback) {
+      process.env.MEDUSA_BACKEND_URL = /^https?:\/\//.test(fallback) ? fallback : `https://${fallback}`
+      console.log('[config] Derived MEDUSA_BACKEND_URL =', process.env.MEDUSA_BACKEND_URL)
+    } else {
+      console.warn('[config] MEDUSA_BACKEND_URL not set and no fallback domain detected.')
+    }
   }
 }
 
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
-  redisUrl: process.env.REDIS_URL,
-    // Pass SSL options to MikroORM/pg so TLS verification works with Supabase
+    redisUrl: process.env.REDIS_URL,
+    // Uproszczona logika SSL: domyślnie korzystaj z wbudowanych CA; opcjonalnie inline CA
     databaseDriverOptions: {
       connection: {
         ssl: (() => {
-          const reject = process.env.DB_SSL_REJECT_UNAUTHORIZED === 'false' ? false : true
+          // Domyślnie nie wymuszamy rejectUnauthorized (Supabase ma public CA). Ustaw TRUE tylko jeśli jawnie podasz DB_SSL_REJECT_UNAUTHORIZED=true
+          const explicit = process.env.DB_SSL_REJECT_UNAUTHORIZED
+          const reject = explicit ? explicit !== 'false' : false
+          // Opcjonalne przekazanie CA jako ścieżka albo bezpośrednia zawartość (SUPABASE_DB_CA_CERT / SUPABASE_DB_CA_CERT_B64)
+          let caContent = null
           const caPath = process.env.PGSSLROOTCERT || process.env.NODE_EXTRA_CA_CERTS
-          if (reject && caPath && fs.existsSync(caPath)) {
-            return { rejectUnauthorized: true, ca: fs.readFileSync(caPath, 'utf8') }
+          if (caPath && fs.existsSync(caPath)) {
+            try { caContent = fs.readFileSync(caPath, 'utf8') } catch (e) { console.warn('[config][ssl] Failed reading CA file', e.message) }
+          } else if (process.env.SUPABASE_DB_CA_CERT) {
+            caContent = process.env.SUPABASE_DB_CA_CERT
+          } else if (process.env.SUPABASE_DB_CA_CERT_B64) {
+            try { caContent = Buffer.from(process.env.SUPABASE_DB_CA_CERT_B64, 'base64').toString('utf8') } catch (e) { console.warn('[config][ssl] Failed decoding base64 CA', e.message) }
           }
-          return { rejectUnauthorized: reject }
+          if (caContent) {
+            return { rejectUnauthorized: true, ca: caContent }
+          }
+            return reject ? { rejectUnauthorized: true } : { rejectUnauthorized: false }
         })()
       }
     },
