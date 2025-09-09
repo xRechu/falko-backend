@@ -26,13 +26,8 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install CA certificates and fetch Amazon RDS global trust bundle (used by Supabase on AWS)
-RUN apk add --no-cache ca-certificates curl && \
-	update-ca-certificates && \
-	curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/ssl/certs/aws-rds-global-bundle.pem
-
-# Let Node use the additional CA bundle when verifying TLS connections
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/aws-rds-global-bundle.pem
+# Minimal runtime: tylko certyfikaty systemowe (wystarczą do Supabase), bez custom bundle
+RUN apk add --no-cache ca-certificates && update-ca-certificates
 
 # Install only production deps
 COPY package*.json ./
@@ -52,4 +47,4 @@ EXPOSE 9000
 # Start script ensures admin assets dir exists before launching medusa
 COPY --from=builder /app/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
-CMD ["sh", "-lc", "if [ -n \"$SUPABASE_DB_CA_CERT\" ]; then printf %s \"$SUPABASE_DB_CA_CERT\" > /tmp/supabase-db-ca.crt; export PGSSLROOTCERT=/tmp/supabase-db-ca.crt; export NODE_EXTRA_CA_CERTS=/tmp/supabase-db-ca.crt; fi; export PGSSLMODE=${PGSSLMODE:-verify-full}; ./start.sh"]
+CMD ["./start.sh"]
