@@ -55,185 +55,210 @@ class ReturnsService {
   constructor(container: any, options: any) {
     this.container = container
   }
-  
-  /**
-   * Check if order is eligible for return (within 14 days)
-   */
+
+  private get manager() {
+    try {
+      return this.container.resolve("manager")
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Check if order is eligible for return (within 14 days and completed) */
   async isOrderEligibleForReturn(orderId: string): Promise<boolean> {
     const orderService = this.container.resolve("orderService")
-    
     try {
       const order = await orderService.retrieve(orderId)
-      
-      // Check if order is completed
-      if (order.status !== 'completed') {
-        return false
-      }
-      
-      // Check if within 14 days
-      const orderDate = new Date(order.created_at)
-      const now = new Date()
-      const daysDiff = Math.floor((now.getTime() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
-      
-      return daysDiff <= 14
-    } catch (error) {
-      console.error('Error checking order eligibility:', error)
+      if (order.status !== 'completed') return false
+      const days = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (1000 * 60 * 60 * 24))
+      return days <= 14
+    } catch (e) {
+      console.error('Error checking order eligibility:', e)
       return false
     }
   }
 
-  /**
-   * Create a new return request
-   */
+  /** Create a new return request */
   async createReturn(data: CreateReturnRequest): Promise<Return> {
-    // Note: In Medusa 2.0, we would use proper database manager
-    // For now, we'll use a simplified approach
-    
-    // Validate order eligibility
-    const isEligible = await this.isOrderEligibleForReturn(data.order_id)
-    if (!isEligible) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        "Order is not eligible for return (must be completed and within 14 days)"
-      )
+    const manager = this.manager
+    if (!manager) throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, 'Database manager not available')
+
+    const eligible = await this.isOrderEligibleForReturn(data.order_id)
+    if (!eligible) {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, 'Order is not eligible for return (must be completed and within 14 days)')
     }
-    
-    // Calculate total amount
-    const totalAmount = data.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0)
-    
-    // Calculate refund amount (with 10% bonus for loyalty points)
-    const refundAmount = data.refund_method === 'loyalty_points' 
-      ? Math.floor(totalAmount * 1.1) // 10% bonus
-      : totalAmount
-    
-    // Set expiration date (14 days from now for processing)
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 14)
-    
-    const returnId = `ret_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
-    // TODO: In production, implement proper database operations
-    // For now, we'll simulate the return creation
-    console.log('📝 Creating return:', {
-      returnId,
-      orderId: data.order_id,
-      customerId: data.customer_id,
-      items: data.items,
-      refundMethod: data.refund_method,
-      totalAmount,
-      refundAmount
-    })
-    
-    // Generate Furgonetka QR code
-    await this.generateFurgonetkaQR(returnId)
-    
-    return this.getReturn(returnId)
+
+    const totalAmount = data.items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
+    const refundAmount = data.refund_method === 'loyalty_points' ? Math.floor(totalAmount * 1.1) : totalAmount
+    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+    const id = `ret_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+    await manager.query(
+      `INSERT INTO returns (id, order_id, customer_id, status, reason_code, refund_method, items, total_amount, refund_amount, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, data.order_id, data.customer_id, 'qr_generated', data.reason_code, data.refund_method, JSON.stringify(data.items), totalAmount, refundAmount, expiresAt]
+    )
+
+    await manager.query(
+      `INSERT INTO return_surveys (id, return_id, reason_code, satisfaction_rating, size_issue, quality_issue, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [`rsv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, id, data.reason_code, data.satisfaction_rating ?? null, data.size_issue ?? null, data.quality_issue ?? null, data.description ?? null]
+    )
+
+    await this.generateFurgonetkaQR(id)
+    return this.getReturn(id)
   }
 
-  /**
-   * Generate Furgonetka QR code for return
-   */
+  /** Generate Furgonetka QR code for return */
   async generateFurgonetkaQR(returnId: string): Promise<void> {
+    const manager = this.manager
+    if (!manager) return
     try {
       // TODO: Integrate with real Furgonetka API
-      // For now, generate mock QR code
       const qrCode = `https://api.furgonetka.pl/qr/return_${returnId}_${Date.now()}`
       const trackingNumber = `RET${Math.random().toString(36).substr(2, 9).toUpperCase()}`
-      
-      // TODO: In production, update database
       console.log(`✅ Generated Furgonetka QR for return ${returnId}: ${qrCode}`)
       console.log(`📦 Tracking number: ${trackingNumber}`)
-      
+      await manager.query(
+        `UPDATE returns SET furgonetka_qr_code = $1, furgonetka_tracking_number = $2, updated_at = NOW() WHERE id = $3`,
+        [qrCode, trackingNumber, returnId]
+      )
     } catch (error) {
       console.error(`❌ Error generating Furgonetka QR for return ${returnId}:`, error)
       throw error
     }
   }
 
-  /**
-   * Get return by ID
-   */
+  /** Get single return */
   async getReturn(returnId: string): Promise<Return> {
-    // TODO: In production, implement proper database query
-    // For now, return mock data
-    const mockReturn: Return = {
-      id: returnId,
-      order_id: 'order_123',
-      customer_id: 'customer_123',
-      status: 'qr_generated',
-      reason_code: 'wrong_size',
-      refund_method: 'loyalty_points',
-      items: [],
-      total_amount: 29900,
-      refund_amount: 32890,
-      furgonetka_qr_code: `https://api.furgonetka.pl/qr/return_${returnId}_${Date.now()}`,
-      furgonetka_tracking_number: `RET${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-      created_at: new Date(),
-      updated_at: new Date(),
-      expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-      survey: {
-        id: 'survey_123',
-        return_id: returnId,
-        reason_code: 'wrong_size',
-        satisfaction_rating: 4,
-        size_issue: 'too_small',
-        quality_issue: undefined,
-        description: 'Product was too small',
-        created_at: new Date()
-      }
+    const manager = this.manager
+    if (!manager) throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, 'Database manager not available')
+
+    const rows = await manager.query(
+      `SELECT r.*, s.id as survey_id, s.reason_code as survey_reason_code, s.satisfaction_rating, s.size_issue, s.quality_issue, s.description as survey_description, s.created_at as survey_created_at
+       FROM returns r
+       LEFT JOIN return_surveys s ON s.return_id = r.id
+       WHERE r.id = $1
+       LIMIT 1`,
+      [returnId]
+    )
+
+    if (!rows || rows.length === 0) throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Return not found')
+    const row = rows[0]
+
+    const ret: Return = {
+      id: row.id,
+      order_id: row.order_id,
+      customer_id: row.customer_id,
+      status: row.status,
+      reason_code: row.reason_code,
+      refund_method: row.refund_method,
+      items: Array.isArray(row.items) ? row.items : JSON.parse(row.items || '[]'),
+      total_amount: row.total_amount,
+      refund_amount: row.refund_amount ?? undefined,
+      furgonetka_qr_code: row.furgonetka_qr_code ?? undefined,
+      furgonetka_tracking_number: row.furgonetka_tracking_number ?? undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      expires_at: row.expires_at,
+      processed_at: row.processed_at ?? undefined,
+      survey: row.survey_id
+        ? {
+            id: row.survey_id,
+            return_id: row.id,
+            reason_code: row.survey_reason_code,
+            satisfaction_rating: row.satisfaction_rating ?? undefined,
+            size_issue: row.size_issue ?? undefined,
+            quality_issue: row.quality_issue ?? undefined,
+            description: row.survey_description ?? undefined,
+            created_at: row.survey_created_at,
+          }
+        : undefined,
     }
-    
-    console.log(`📋 Mock return data for ${returnId}:`, mockReturn)
-    return mockReturn
+    return ret
   }
 
-  /**
-   * Get returns for customer
-   */
+  /** Get returns for customer */
   async getCustomerReturns(customerId: string): Promise<Return[]> {
-    // TODO: In production, implement proper database query
-    // For now, return empty array
-    console.log(`📋 Getting returns for customer ${customerId}`)
-    return []
+    const manager = this.manager
+    if (!manager) return []
+
+    const rows = await manager.query(
+      `SELECT r.*, s.id as survey_id, s.reason_code as survey_reason_code, s.satisfaction_rating, s.size_issue, s.quality_issue, s.description as survey_description, s.created_at as survey_created_at
+       FROM returns r
+       LEFT JOIN return_surveys s ON s.return_id = r.id
+       WHERE r.customer_id = $1
+       ORDER BY r.created_at DESC`,
+      [customerId]
+    )
+
+    return (rows || []).map((row: any) => ({
+      id: row.id,
+      order_id: row.order_id,
+      customer_id: row.customer_id,
+      status: row.status,
+      reason_code: row.reason_code,
+      refund_method: row.refund_method,
+      items: Array.isArray(row.items) ? row.items : JSON.parse(row.items || '[]'),
+      total_amount: row.total_amount,
+      refund_amount: row.refund_amount ?? undefined,
+      furgonetka_qr_code: row.furgonetka_qr_code ?? undefined,
+      furgonetka_tracking_number: row.furgonetka_tracking_number ?? undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      expires_at: row.expires_at,
+      processed_at: row.processed_at ?? undefined,
+      survey: row.survey_id
+        ? {
+            id: row.survey_id,
+            return_id: row.id,
+            reason_code: row.survey_reason_code,
+            satisfaction_rating: row.satisfaction_rating ?? undefined,
+            size_issue: row.size_issue ?? undefined,
+            quality_issue: row.quality_issue ?? undefined,
+            description: row.survey_description ?? undefined,
+            created_at: row.survey_created_at,
+          }
+        : undefined,
+    }))
   }
 
-  /**
-   * Update return status
-   */
+  /** Update return status */
   async updateReturnStatus(returnId: string, status: Return['status']): Promise<Return> {
-    // TODO: In production, implement proper database update
-    console.log(`📝 Updating return ${returnId} status to: ${status}`)
+    const manager = this.manager
+    if (!manager) throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, 'Database manager not available')
+
+    await manager.query(`UPDATE returns SET status = $1, updated_at = NOW() WHERE id = $2`, [status, returnId])
     return this.getReturn(returnId)
   }
 
-  /**
-   * Process return refund
-   */
+  /** Process refund */
   async processRefund(returnId: string): Promise<void> {
+    const manager = this.manager
+    if (!manager) throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, 'Database manager not available')
+
     const returnData = await this.getReturn(returnId)
-    
+
     if (returnData.refund_method === 'loyalty_points') {
-      // Add loyalty points
       const loyaltyService = this.container.resolve("loyaltyService")
       const refundAmountCents = returnData.refund_amount ?? returnData.total_amount
-      await loyaltyService.addPoints({
+      const points = Math.floor(refundAmountCents / 100)
+      await loyaltyService.awardPoints({
         customerId: returnData.customer_id,
-        points: Math.floor(refundAmountCents / 100), // Convert to points (1 PLN = 1 point)
+        points,
+        orderId: returnData.order_id,
         description: `Zwrot zamówienia ${returnData.order_id} (+10% bonus)`,
-        type: 'return_bonus'
+        metadata: { return_id: returnData.id, source: 'returns' }
       })
     } else {
-  // Process card refund via selected payment provider (to be implemented)
-  const refundAmountCents = returnData.refund_amount ?? returnData.total_amount
-  console.log(`TODO: Process card refund of ${refundAmountCents / 100} PLN for return ${returnId}`)
+      const refundAmountCents = returnData.refund_amount ?? returnData.total_amount
+      console.log(`TODO: Process card refund of ${refundAmountCents / 100} PLN for return ${returnId}`)
     }
-    
-    // Update status
-    await this.updateReturnStatus(returnId, 'refunded')
-    
-    // Send confirmation email
+
+    await manager.query(`UPDATE returns SET status = 'refunded', processed_at = NOW(), updated_at = NOW() WHERE id = $1`, [returnId])
+
     const emailService = this.container.resolve("emailService")
-    await emailService.sendReturnProcessedEmail(returnData)
+    await emailService.sendReturnProcessedEmail({ ...returnData, status: 'refunded', processed_at: new Date() })
   }
 }
 

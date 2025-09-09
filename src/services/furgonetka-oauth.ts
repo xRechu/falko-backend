@@ -9,14 +9,31 @@ class FurgonetkaOAuthService {
   private baseUrl: string;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
+  // User impersonation (bearer-token-for-user)
+  private partnerUserId: string | null = null;
+  private userAccessToken: string | null = null;
+  private userTokenExpiry: number = 0;
 
   constructor() {
     this.clientId = process.env.FURGONETKA_OAUTH_CLIENT_ID || '';
     this.clientSecret = process.env.FURGONETKA_OAUTH_CLIENT_SECRET || '';
     this.baseUrl = process.env.FURGONETKA_BASE_URL || 'https://api.sandbox.furgonetka.pl';
+  this.partnerUserId = process.env.FURGONETKA_PARTNER_USER_ID || null;
     
     if (!this.clientId || !this.clientSecret) {
       console.warn('🚨 Furgonetka OAuth: Brak konfiguracji Client ID/Secret');
+    }
+    if (process.env.FURGONETKA_AUTH_TOKEN) {
+      console.log('🔐 Furgonetka: X-Auth-Token configured (env present)');
+    }
+    if (process.env.FURGONETKA_COMPANY_ID) {
+      console.log('🏢 Furgonetka: X-Company-Id configured (env present)');
+    }
+    if (process.env.FURGONETKA_USER_EMAIL) {
+      console.log('👤 Furgonetka: X-User-Email configured (env present)');
+    }
+    if (this.partnerUserId) {
+      console.log('🧑‍💼 Furgonetka: PARTNER_USER_ID configured (user impersonation enabled)');
     }
   }
 
@@ -35,16 +52,30 @@ class FurgonetkaOAuthService {
     console.log('🔄 Furgonetka OAuth: Pobieranie nowego tokenu...');
     
     try {
-      const response = await fetch(`${this.baseUrl}/oauth/token`, {
+      const params = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+      })
+      // Opcjonalne: scope/audience z ENV, jeśli wymagane przez środowisko
+      const scope = process.env.FURGONETKA_OAUTH_SCOPE
+      const audience = process.env.FURGONETKA_OAUTH_AUDIENCE
+      if (scope) params.append('scope', scope)
+      if (audience) params.append('audience', audience)
+
+      if (scope || audience) {
+        console.log('🔧 OAuth token params:', {
+          scope: scope ? '[SET]' : undefined,
+          audience: audience ? '[SET]' : undefined,
+        })
+      }
+
+  const response = await fetch(`${this.baseUrl}/oauth/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          grant_type: 'client_credentials',
-          client_id: this.clientId,
-          client_secret: this.clientSecret
-        }).toString()
+        body: params.toString()
       });
 
       if (!response.ok) {
@@ -68,17 +99,72 @@ class FurgonetkaOAuthService {
   }
 
   /**
+   * Zwraca token użytkownika (bearer-token-for-user), jeśli skonfigurowano PARTNER_USER_ID.
+   * W przeciwnym wypadku zwraca token aplikacji.
+   */
+  async getEffectiveAccessToken(): Promise<string> {
+    const now = Date.now();
+    const bufferTime = 5 * 60 * 1000; // 5 minut
+    if (this.partnerUserId) {
+      // Jeśli mamy świeży token użytkownika – użyj go
+      if (this.userAccessToken && now < (this.userTokenExpiry - bufferTime)) {
+        return this.userAccessToken;
+      }
+      // Odśwież: najpierw token aplikacji
+      const appToken = await this.getAccessToken();
+      try {
+        const url = `${this.baseUrl}/account/token/${encodeURIComponent(this.partnerUserId)}`;
+        console.log('🔁 Furgonetka OAuth: Wymiana tokenu aplikacji na token użytkownika przez', url);
+        const resp = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${appToken}`,
+            'Accept': 'application/vnd.furgonetka.v1+json',
+          },
+        });
+        if (!resp.ok) {
+          const preview = await resp.text().catch(() => '');
+          throw new Error(`User token exchange failed: ${resp.status} ${resp.statusText} ${preview}`);
+        }
+        const data: any = await resp.json();
+        this.userAccessToken = data.access_token;
+        this.userTokenExpiry = now + (Number(data.expires_in || 0) * 1000);
+        console.log('✅ Furgonetka OAuth: Token użytkownika otrzymany');
+        return this.userAccessToken!;
+      } catch (e) {
+        console.error('❌ Furgonetka OAuth: Błąd wymiany na token użytkownika', e);
+        // Fallback: użyj tokenu aplikacji (część endpointów i tak zadziała)
+        return appToken;
+      }
+    }
+    // Brak impersonacji – użyj tokenu aplikacji
+    return await this.getAccessToken();
+  }
+
+  /**
    * Wykonuje autoryzowane zapytanie do API Furgonetka.pl
    */
   async authenticatedRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
-    const token = await this.getAccessToken();
+  const token = await this.getEffectiveAccessToken();
     
-    const defaultHeaders = {
+    const hasBody = typeof options.body !== 'undefined'
+    const defaultHeaders: Record<string, string> = {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/vnd.furgonetka.v1+json',
       'Accept': 'application/vnd.furgonetka.v1+json',
-      'X-Language': 'pl_PL'
-    };
+      'X-Language': 'pl_PL',
+      ...(process.env.FURGONETKA_AUTH_TOKEN
+        ? { 'X-Auth-Token': process.env.FURGONETKA_AUTH_TOKEN as string }
+        : {}),
+      ...(process.env.FURGONETKA_COMPANY_ID
+        ? { 'X-Company-Id': process.env.FURGONETKA_COMPANY_ID as string }
+        : {}),
+      ...(process.env.FURGONETKA_USER_EMAIL
+        ? { 'X-User-Email': process.env.FURGONETKA_USER_EMAIL as string }
+        : {}),
+    }
+    if (hasBody) {
+      defaultHeaders['Content-Type'] = 'application/vnd.furgonetka.v1+json'
+    }
 
     const finalOptions: RequestInit = {
       ...options,
@@ -92,7 +178,7 @@ class FurgonetkaOAuthService {
     
     console.log(`📡 Furgonetka API: ${finalOptions.method || 'GET'} ${url}`);
     
-    const response = await fetch(url, finalOptions);
+  const response = await fetch(url, finalOptions);
     
     // Loguj rate limiting info
     const rateLimit = response.headers.get('X-RateLimit-Limit');
@@ -107,8 +193,14 @@ class FurgonetkaOAuthService {
     }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Furgonetka API Error: ${response.status} ${response.statusText}`, errorText);
+      // Użyj klona, by nie konsumować body – caller może je jeszcze odczytać
+      let errorPreview = ''
+      try {
+        errorPreview = await response.clone().text()
+      } catch (_) {
+        // ignore
+      }
+      console.error(`❌ Furgonetka API Error: ${response.status} ${response.statusText}`, errorPreview);
     }
     
     return response;

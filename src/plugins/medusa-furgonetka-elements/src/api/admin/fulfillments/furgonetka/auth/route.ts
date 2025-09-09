@@ -10,15 +10,12 @@
  * limitations under the License.
  */
 
-import type { 
-  Request, 
-  Response,
-} from "express"
+import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import FurgonetkaAuthService from "../../../../../services/furgonetkaAuth";
 
 export const GET = async (
-  req: Request,
-  res: Response
+  req: MedusaRequest,
+  res: MedusaResponse
 ) => {
   try {
     const furgonetkaAuthService = req.scope.resolve<FurgonetkaAuthService>(

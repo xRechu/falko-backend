@@ -4,22 +4,19 @@
  * MIT License
  */
 
-import type { 
-  Request, 
-  Response,
-} from "express"
+import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import FurgonetkaAuthService from "../../../../../services/furgonetkaAuth";
 
 export const POST = async (
-  req: Request,
-  res: Response
+  req: MedusaRequest,
+  res: MedusaResponse
 ) => {
   try {
     const furgonetkaAuthService = req.scope.resolve<FurgonetkaAuthService>(
       "furgonetkaAuthService"
     );
     
-    const { orderData } = req.body;
+    const { orderData } = (req.body as { orderData: any });
     
     // Map Medusa order to Furgonetka shipment format
     const shipmentData = {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Button, Container, Heading, toast } from "@medusajs/ui"
+import { Button, Container, Heading } from "@medusajs/ui"
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { DetailWidgetProps } from "@medusajs/framework/types"
 
@@ -22,12 +22,26 @@ const FurgonetkaWidget = ({ data: order }: DetailWidgetProps<any>) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+          'Accept': 'application/json',
+        },
+        credentials: 'include',
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+        let message = `HTTP error! status: ${response.status}`
+        try {
+          const ct = response.headers.get('content-type') || ''
+          if (ct.includes('application/json')) {
+            const errorData = await response.json()
+            message = errorData?.error || message
+          } else {
+            const text = await response.text()
+            message = text || message
+          }
+        } catch (_) {
+          // ignore parsing errors
+        }
+        throw new Error(message)
       }
 
       const result = await response.json()
@@ -47,14 +61,10 @@ const FurgonetkaWidget = ({ data: order }: DetailWidgetProps<any>) => {
         createdAt: new Date().toISOString()
       })
       
-      toast.success("Sukces", {
-        description: 'Etykieta Furgonetka została wygenerowana pomyślnie!',
-      })
+  alert('Etykieta Furgonetka została wygenerowana pomyślnie!')
     } catch (error: any) {
       console.error('Error generating Furgonetka label:', error)
-      toast.error("Błąd", {
-        description: `Wystąpił błąd: ${error.message}`,
-      })
+  alert(`Wystąpił błąd: ${error?.message || 'Nieznany błąd'}`)
     } finally {
       setIsGenerating(false)
     }
@@ -67,9 +77,7 @@ const FurgonetkaWidget = ({ data: order }: DetailWidgetProps<any>) => {
     // W prawdziwej implementacji pobieralibyśmy PDF
     window.open(labelData.labelUrl, '_blank')
     
-    toast.success("Info", {
-      description: 'Link do etykiety został otwarty (mock implementation)',
-    })
+  alert('Link do etykiety został otwarty (mock implementation)')
   }
 
   const trackShipment = () => {

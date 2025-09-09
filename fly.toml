@@ -1,0 +1,44 @@
+# fly.toml - Fly.io app configuration for Medusa 2.x backend
+# Run: fly launch --no-deploy in falko-backend to initialize, then deploy with fly deploy
+
+app = "falko-backend-staging"
+primary_region = "fra"
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[deploy]
+  # Release pipeline: (1) opcjonalny CA -> (2) migracje -> (3) ensure publishable key (nie blokujące)
+  release_command = "sh -lc 'if [ -n \"$SUPABASE_DB_CA_CERT\" ]; then printf %s \"$SUPABASE_DB_CA_CERT\" > /tmp/supabase-db-ca.crt; export PGSSLROOTCERT=/tmp/supabase-db-ca.crt; export NODE_EXTRA_CA_CERTS=/tmp/supabase-db-ca.crt; fi; export PGSSLMODE=verify-full; npm run migrations:run && npm run ensure:publishable-key || echo \"(warn) ensure publishable key step failed\"'"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "9000"
+  # Enforce SSL for Postgres connections used by node-postgres/knex
+  PGSSLMODE = "require"
+  # Point node-postgres to the Alpine system CA bundle for certificate chain verification
+  PGSSLROOTCERT = "/etc/ssl/certs/ca-certificates.crt"
+
+[http_service]
+  internal_port = 9000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[checks]
+  [checks.health]
+    port = 9000
+    type = "http"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"
+
+[metrics]
+  port = 9000
+  path = "/metrics"

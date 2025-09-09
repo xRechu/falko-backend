@@ -44,7 +44,7 @@ export default async function emailOrderConfirmationHandler({
     }
     
     // Send order confirmation email
-    await emailService.sendOrderConfirmation(order.customer.email, orderData)
+    await emailService.sendOrderConfirmationEmail(order.customer.email, orderData)
     
     console.log(`✅ Email: Order confirmation sent successfully to ${order.customer.email}`)
     

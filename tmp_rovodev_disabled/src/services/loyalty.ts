@@ -63,6 +63,44 @@ interface ReversePointsParams {
 }
 
 class LoyaltyService extends TransactionBaseService {
+  /** Ensure account exists for customer */
+  async ensureAccount(customerId: string): Promise<void> {
+    return await this.atomicPhase_(async (manager: EntityManager) => {
+      await manager.query(`
+        INSERT INTO loyalty_accounts (customer_id, total_points, lifetime_earned, lifetime_spent)
+        VALUES ($1, 0, 0, 0)
+        ON CONFLICT (customer_id) DO NOTHING
+      `, [customerId])
+    })
+  }
+
+  /** Get customer points balance */
+  async getCustomerBalance(customerId: string): Promise<number> {
+    try {
+      const result = await this.manager_.query(`
+        SELECT total_points FROM loyalty_accounts WHERE customer_id = $1
+      `, [customerId])
+      if (!result || result.length === 0) return 0
+      return result[0].total_points || 0
+    } catch (e) {
+      return 0
+    }
+  }
+
+  /** List active rewards */
+  async getActiveRewards(): Promise<any[]> {
+    try {
+      const rows = await this.manager_.query(`
+        SELECT id, title, description, points_cost, category, discount_amount, discount_percentage, product_id, valid_until, is_active, created_at
+        FROM loyalty_rewards
+        WHERE is_active = TRUE
+        ORDER BY created_at DESC
+      `)
+      return rows
+    } catch (e) {
+      return []
+    }
+  }
   
   /**
    * Calculate points for an order

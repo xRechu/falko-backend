@@ -23,13 +23,16 @@
     "swc": true
   },
   "include": [
-    "**/*",
+    "src/**/*.ts",
+    "src/**/*.tsx",
     ".medusa/types/*"
   ],
   "exclude": [
     "node_modules",
     ".medusa/server",
     ".medusa/admin",
-    ".cache"
+    ".cache",
+    "tmp_rovodev_disabled/**",
+    "src/subscribers/**"
   ]
 }

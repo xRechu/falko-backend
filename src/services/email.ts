@@ -113,11 +113,11 @@ export class EmailService {
   /**
    * 📦 Order Confirmation Email - Potwierdzenie zamówienia
    */
-  async sendOrderConfirmationEmail(data: OrderConfirmationData): Promise<boolean> {
+  async sendOrderConfirmationEmail(toEmail: string, data: OrderConfirmationData): Promise<boolean> {
     const template = this.generateOrderConfirmationTemplate(data);
     
     return this.sendEmail({
-      to: data.customerName, // Assuming this contains email
+      to: toEmail,
       subject: `📦 Potwierdzenie zamówienia #${data.orderNumber}`,
       html: template.html,
       text: template.text
@@ -159,7 +159,7 @@ export class EmailService {
         subject: template.subject,
         html: template.html,
         text: template.text,
-        reply_to: this.config.replyTo
+        replyTo: this.config.replyTo
       });
 
       console.log('✅ Email sent successfully:', result.data?.id);

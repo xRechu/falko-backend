@@ -10,89 +10,11 @@ import { furgonetkaOAuth } from "../../../../../services/furgonetka-oauth";
 export const AUTHENTICATE = false;
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  try {
-    console.log('🗺️ GET /points/map - Proxy dla Furgonetka Map API');
-    console.log('🔗 Query params:', req.query);
-    
-    // Ustaw CORS headers najpierw
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Language, x-publishable-api-key');
-    
-    // Przekaż query params do Furgonetka API
-    const queryString = new URLSearchParams(req.query as any).toString();
-    console.log('📡 Query string:', queryString);
-    
-    // Zwróć mockowe dane punktów na mapie zgodne z Map API
-    return res.status(200).json({
-      success: true,
-      points: [
-        {
-          code: "WAW198M",
-          name: "InPost Paczkomat WAW198M",
-          coordinates: {
-            latitude: 52.2293,
-            longitude: 21.0139
-          },
-          address: {
-            postcode: "00-510",
-            street: "Marszałkowska 94",
-            city: "Warszawa",
-            country_code: "PL"
-          },
-          type: "PACZKOMAT",
-          service: "inpost",
-          active: true,
-          cod: true,
-          opening_hours: {
-            monday: { start_hour: "00:00", end_hour: "23:59" },
-            tuesday: { start_hour: "00:00", end_hour: "23:59" },
-            wednesday: { start_hour: "00:00", end_hour: "23:59" },
-            thursday: { start_hour: "00:00", end_hour: "23:59" },
-            friday: { start_hour: "00:00", end_hour: "23:59" },
-            saturday: { start_hour: "00:00", end_hour: "23:59" },
-            sunday: { start_hour: "00:00", end_hour: "23:59" }
-          }
-        },
-        {
-          code: "WAW201M",
-          name: "InPost Paczkomat WAW201M",
-          coordinates: {
-            latitude: 52.22885,
-            longitude: 21.01413
-          },
-          address: {
-            postcode: "00-511",
-            street: "Nowogrodzka 27",
-            city: "Warszawa",
-            country_code: "PL"
-          },
-          type: "PACZKOMAT",
-          service: "inpost",
-          active: true,
-          cod: true,
-          opening_hours: {
-            monday: { start_hour: "00:00", end_hour: "23:59" },
-            tuesday: { start_hour: "00:00", end_hour: "23:59" },
-            wednesday: { start_hour: "00:00", end_hour: "23:59" },
-            thursday: { start_hour: "00:00", end_hour: "23:59" },
-            friday: { start_hour: "00:00", end_hour: "23:59" },
-            saturday: { start_hour: "00:00", end_hour: "23:59" },
-            sunday: { start_hour: "00:00", end_hour: "23:59" }
-          }
-        }
-      ],
-      total: 2,
-      message: "Mock data - map endpoints working"
-    });
-
-  } catch (error) {
-    console.error('❌ Błąd GET /points/map:', error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
+  // Enforce POST-only contract (no mock data)
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Language, x-publishable-api-key')
+  return res.status(405).json({ success: false, error: 'Method Not Allowed. Use POST /store/furgonetka/points/map' })
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
