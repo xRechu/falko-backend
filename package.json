@@ -47,7 +47,7 @@
     "@mikro-orm/postgresql": "6.4.3",
     "awilix": "^8.0.1",
     "pg": "^8.13.0",
-    "resend": "^4.7.0"
+    "resend": "^6.0.3"
   },
   "devDependencies": {
     "@medusajs/admin-bundler": "2.8.5",
