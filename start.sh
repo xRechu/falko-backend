@@ -18,6 +18,10 @@ ls -l .medusa/client 2>/dev/null | head -20 || true
 
 echo "[start.sh] REDIS_URL length: ${#REDIS_URL}"
 echo "[start.sh] MEDUSA_BACKEND_URL: $MEDUSA_BACKEND_URL"
+echo "[start.sh] DATABASE_URL (redacted host): $(echo "$DATABASE_URL" | sed -E 's#(postgresql://)([^:@/]+):([^@]+)@([^:/]+)(:?[0-9]*)(/.*)#\1***:***@\4\5\6#')"
+echo "[start.sh] FORCE_DB_SSL_REJECT: $FORCE_DB_SSL_REJECT"
+echo "[start.sh] PGSSLROOTCERT: $PGSSLROOTCERT"
+echo "[start.sh] NODE_EXTRA_CA_CERTS: $NODE_EXTRA_CA_CERTS"
 
 echo "[start.sh] Starting Medusa..."
 exec npm run start --silent

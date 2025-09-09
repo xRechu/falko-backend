@@ -9,6 +9,19 @@ module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
     redisUrl: process.env.REDIS_URL,
+    // Wymuszenie nie-weryfikowanego cert chain (Supabase public CA powinno działać;
+    // jeśli Railway środowisko nadal rzuca SELF_SIGNED_CERT_IN_CHAIN, to obejście).
+    // Ustaw FORCE_DB_SSL_REJECT=true aby włączyć ponownie weryfikację.
+    databaseDriverOptions: {
+      connection: {
+        ssl: (() => {
+          if (process.env.FORCE_DB_SSL_REJECT === 'true') {
+            return { rejectUnauthorized: true }
+          }
+          return { rejectUnauthorized: false }
+        })()
+      }
+    },
     http: {
       storeCors: process.env.STORE_CORS,
       adminCors: process.env.ADMIN_CORS,
